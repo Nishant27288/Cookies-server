@@ -2,6 +2,7 @@ import requests
 import threading
 import logging
 import random
+import time
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, ContextTypes
 
@@ -110,20 +111,21 @@ async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     def send_messages():
         token_index = 0
-        while is_sending_active:
-            for message in messages:
-                if not is_sending_active:
-                    return
+        for message in messages:
+            if not is_sending_active:
+                return
 
-                current_token = tokens[token_index]
-                success = send_facebook_message(current_token, chat_id, message)
+            current_token = tokens[token_index]
+            success = send_facebook_message(current_token, chat_id, message)
 
-                if success:
-                    logging.info(f"✅ Sent: {message} (Token {token_index + 1})")
-                    token_index = (token_index + 1) % len(tokens)  # Switch to next token
-                else:
-                    logging.error(f"❌ Failed (Token {token_index + 1}), switching token")
-                    token_index = (token_index + 1) % len(tokens)
+            if success:
+                logging.info(f"✅ Sent: {message} (Token {token_index + 1})")
+            else:
+                logging.error(f"❌ Failed (Token {token_index + 1}), switching token")
+
+            # Switch to next token and add delay
+            token_index = (token_index + 1) % len(tokens)
+            time.sleep(1)  # Add 1 second delay between messages
 
     # Start message sending threads
     for _ in range(len(tokens)):  # Each token gets its own thread
