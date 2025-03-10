@@ -109,27 +109,31 @@ async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Could not read the message file!")
         return
 
-    def send_messages():
-        token_index = 0
+    def send_messages(token):
+        token_index = tokens.index(token)
         for message in messages:
             if not is_sending_active:
                 return
 
-            current_token = tokens[token_index]
-            success = send_facebook_message(current_token, chat_id, message)
+            success = send_facebook_message(token, chat_id, message)
 
             if success:
                 logging.info(f"✅ Sent: {message} (Token {token_index + 1})")
             else:
                 logging.error(f"❌ Failed (Token {token_index + 1}), switching token")
 
-            # Switch to next token and add delay
-            token_index = (token_index + 1) % len(tokens)
             time.sleep(1)  # Add 1 second delay between messages
 
-    # Start message sending threads
-    for _ in range(len(tokens)):  # Each token gets its own thread
-        threading.Thread(target=send_messages, daemon=True).start()
+    # Start message sending threads for each token separately
+    threads = []
+    for token in tokens:
+        thread = threading.Thread(target=send_messages, args=(token,), daemon=True)
+        threads.append(thread)
+        thread.start()
+
+    # Wait for all threads to finish before ending
+    for thread in threads:
+        thread.join()
 
     await update.message.reply_text("🚀 Messages are being sent nonstop with rotating tokens!")
     return ConversationHandler.END
