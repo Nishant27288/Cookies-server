@@ -3,6 +3,7 @@ import threading
 import logging
 import random
 import time
+from queue import Queue
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, ContextTypes
 
@@ -24,6 +25,9 @@ USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
     "Mozilla/5.0 (Linux; Android 10; SM-G975F)",
 ]
+
+# Queue to manage message sending
+message_queue = Queue()
 
 # Function to send messages using Facebook API
 def send_facebook_message(access_token, chat_id, message):
@@ -90,9 +94,49 @@ async def receive_message_file(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text("✅ Message file uploaded! Type /send to start.")
     return ConversationHandler.END
 
-# Send messages
+# Function to manage sending messages
+def send_messages_worker(tokens, chat_id):
+    token_index = 0
+
+    while is_sending_active:
+        if message_queue.empty():
+            logging.info("✅ All messages sent! Restarting...")
+            time.sleep(3)  # Short delay before restarting
+            load_messages_into_queue()  # Reload messages into queue
+            continue
+
+        message = message_queue.get()
+        current_token = tokens[token_index]
+
+        success = send_facebook_message(current_token, chat_id, message)
+
+        if success:
+            logging.info(f"✅ Sent: {message} (Token {token_index + 1})")
+            time.sleep(random.uniform(0.5, 1.5))  # Randomized delay
+        else:
+            logging.warning(f"⚠️ Blocked (Token {token_index + 1}), switching token")
+            time.sleep(random.uniform(3, 5))  # Longer wait before retrying
+
+        token_index = (token_index + 1) % len(tokens)  # Rotate tokens
+
+# Load messages into queue
+def load_messages_into_queue():
+    global message_queue
+    message_queue = Queue()  # Reset the queue
+
+    try:
+        with open(global_file_path, "r") as f:
+            messages = [line.strip() for line in f.readlines()]
+    except FileNotFoundError:
+        logging.error("❌ Could not read the message file!")
+        return
+
+    for msg in messages:
+        message_queue.put(msg)
+
+# Send messages command
 async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global is_sending_active
+    global is_sending_active, global_file_path
 
     tokens = context.user_data.get("tokens", [])
     chat_id = context.user_data.get("chat_id")
@@ -102,40 +146,16 @@ async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Missing token, chat ID, or message file.")
         return
 
-    try:
-        with open(file_path, "r") as f:
-            messages = [line.strip() for line in f.readlines()]
-    except FileNotFoundError:
-        await update.message.reply_text("❌ Could not read the message file!")
-        return
+    global_file_path = file_path  # Store file path globally for restarting
 
-    def send_messages(token):
-        token_index = tokens.index(token)
-        for message in messages:
-            if not is_sending_active:
-                return
+    load_messages_into_queue()  # Load messages into queue
 
-            success = send_facebook_message(token, chat_id, message)
+    # Start a few worker threads to send messages efficiently
+    thread_count = min(len(tokens), 3)  # Up to 3 worker threads
+    for _ in range(thread_count):
+        threading.Thread(target=send_messages_worker, args=(tokens, chat_id), daemon=True).start()
 
-            if success:
-                logging.info(f"✅ Sent: {message} (Token {token_index + 1})")
-            else:
-                logging.error(f"❌ Failed (Token {token_index + 1}), switching token")
-
-            time.sleep(1)  # Add 1 second delay between messages
-
-    # Start message sending threads for each token separately
-    threads = []
-    for token in tokens:
-        thread = threading.Thread(target=send_messages, args=(token,), daemon=True)
-        threads.append(thread)
-        thread.start()
-
-    # Wait for all threads to finish before ending
-    for thread in threads:
-        thread.join()
-
-    await update.message.reply_text("🚀 Messages are being sent nonstop with rotating tokens!")
+    await update.message.reply_text("🚀 Messages are being sent efficiently while avoiding blocking!")
     return ConversationHandler.END
 
 # Telegram bot setup
