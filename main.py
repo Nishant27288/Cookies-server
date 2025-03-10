@@ -31,12 +31,7 @@ def send_facebook_message(access_token, chat_id, message):
     payload = {"access_token": access_token, "message": message}
 
     response = requests.post(url, json=payload, headers=headers)
-    if response.ok:
-        logging.info(f"✅ Sent: {message}")
-        return True
-    else:
-        logging.error(f"❌ Failed: {response.text}")
-        return False
+    return response.ok
 
 # Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -125,11 +120,14 @@ async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 current_token = tokens[token_index]
                 success = send_facebook_message(current_token, chat_id, message)
 
-                if not success:
+                if success:
+                    logging.info(f"✅ Sent: {message} (Token {token_index + 1})")
+                else:
+                    logging.error(f"❌ Failed (Token {token_index + 1}), switching token")
                     token_index = (token_index + 1) % len(tokens)
 
     # Start multiple threads to send messages simultaneously
-    for _ in range(5):  # Adjust thread count as needed
+    for _ in range(len(tokens)):  # Each token gets a separate thread
         threading.Thread(target=send_messages, daemon=True).start()
 
     await update.message.reply_text("🚀 Messages are being sent nonstop!")
