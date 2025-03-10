@@ -130,22 +130,23 @@ async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     token_index = 0  # Start with the first token
-    for message in messages:
-        if not is_sending_active:
-            await update.message.reply_text("🛑 Message sending has been stopped.")
-            break  # Stop sending if the flag is set to False
+    while is_sending_active:  # Loop to restart automatically
+        for message in messages:
+            if not is_sending_active:
+                await update.message.reply_text("🛑 Message sending has been stopped.")
+                return
 
-        current_token = tokens[token_index]
-        success = await send_facebook_message(current_token, chat_id, message)
-        
-        if not success:
-            await update.message.reply_text(f"❌ Token {token_index+1} failed! Trying the next one.")
-            token_index = (token_index + 1) % len(tokens)  # Rotate to the next token
+            current_token = tokens[token_index]
+            success = await send_facebook_message(current_token, chat_id, message)
 
-        time.sleep(delay)
+            if not success:
+                await update.message.reply_text(f"❌ Token {token_index+1} failed! Trying the next one.")
+                token_index = (token_index + 1) % len(tokens)  # Rotate to the next token
 
-    await update.message.reply_text("✅ All messages sent successfully!" if is_sending_active else "🛑 Stopped sending messages.")
-    return ConversationHandler.END  # End the conversation after sending the messages
+            time.sleep(delay)
+
+        await update.message.reply_text("✅ All messages sent! Restarting automatically...")
+        time.sleep(5)  # Wait for 5 seconds before restarting
 
 # Telegram bot setup
 def main():
