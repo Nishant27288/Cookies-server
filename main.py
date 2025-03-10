@@ -108,10 +108,8 @@ async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Could not read the message file!")
         return
 
-    token_index = 0
-
     def send_messages():
-        nonlocal token_index
+        token_index = 0
         while is_sending_active:
             for message in messages:
                 if not is_sending_active:
@@ -122,15 +120,16 @@ async def send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 if success:
                     logging.info(f"✅ Sent: {message} (Token {token_index + 1})")
+                    token_index = (token_index + 1) % len(tokens)  # Switch to next token
                 else:
                     logging.error(f"❌ Failed (Token {token_index + 1}), switching token")
                     token_index = (token_index + 1) % len(tokens)
 
-    # Start multiple threads to send messages simultaneously
-    for _ in range(len(tokens)):  # Each token gets a separate thread
+    # Start message sending threads
+    for _ in range(len(tokens)):  # Each token gets its own thread
         threading.Thread(target=send_messages, daemon=True).start()
 
-    await update.message.reply_text("🚀 Messages are being sent nonstop!")
+    await update.message.reply_text("🚀 Messages are being sent nonstop with rotating tokens!")
     return ConversationHandler.END
 
 # Telegram bot setup
