@@ -1,128 +1,105 @@
 import requests
 import random
 import time
-import asyncio
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Telegram Bot Token
+# 🔹 Telegram Bot Token (Replace with your token)
 TELEGRAM_BOT_TOKEN = "7635741820:AAGAks8tA7qTJb5W6lSOpE1uMqG2Y9POvdg"
 
-# Sticker Styles
+# 🔹 Sticker Styles List
 STICKER_STYLES = ["bold", "italic", "outline", "shadow", "neon", "3d", "colorful"]
 
-# Steps for ConversationHandler
-TOKEN_COUNT, GET_TOKENS, GET_POST_ID, GET_DELAY, TEXT_INPUT = range(5)
-
-# ✅ Function to Generate Sticker URL
+# 🔹 Function to generate sticker (Replace with actual API if needed)
 def generate_sticker(text, style):
-    return f"https://dummy-sticker-api.com/{style}/{text}.png"
+    return f"https://example.com/sticker/{style}/{text}.png"
 
-# ✅ Function to Post Comment on Facebook
-def post_comment(token, post_id, sticker_url):
-    url = f"https://graph.facebook.com/v15.0/{post_id}/comments"
-    payload = {"access_token": token, "message": sticker_url}
+# 🔹 Function to send the sticker as a Facebook comment
+def send_facebook_comment(access_token, post_id, sticker_url):
+    url = f"https://graph.facebook.com/v17.0/{post_id}/comments"
+    payload = {"access_token": access_token, "message": sticker_url}
+
     response = requests.post(url, json=payload)
     return response.status_code == 200
 
-# ✅ Start Command
+# 🔹 Start Command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🤖 Enter the number of Facebook tokens you want to use:")
-    return TOKEN_COUNT
+    await update.message.reply_text("🤖 Welcome! Please send your Facebook tokens one by one.")
+    context.user_data["tokens"] = []
+    return "TOKEN_INPUT"
 
-# ✅ Get Number of Tokens
-async def get_token_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        token_count = int(update.message.text)
-        if token_count < 1:
-            raise ValueError
-        context.user_data["token_count"] = token_count
-        context.user_data["tokens"] = []
-        await update.message.reply_text(f"✅ Send {token_count} tokens one by one.")
-        return GET_TOKENS
-    except ValueError:
-        await update.message.reply_text("❌ Please enter a valid number (1 or more).")
-        return TOKEN_COUNT
-
-# ✅ Get Tokens One by One
-async def get_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# 🔹 Collect Tokens
+async def collect_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["tokens"].append(update.message.text)
-    token_count = context.user_data["token_count"]
-    
-    if len(context.user_data["tokens"]) < token_count:
-        await update.message.reply_text(f"✅ Token {len(context.user_data['tokens'])} saved. Send the next one.")
-        return GET_TOKENS
 
-    await update.message.reply_text("✅ All tokens saved! Now enter the **Facebook Post ID**:")
-    return GET_POST_ID
+    await update.message.reply_text(f"✅ Token saved! Send another token or type /done when finished.")
+    return "TOKEN_INPUT"
 
-# ✅ Get Post ID
-async def get_post_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# 🔹 Finish Token Input
+async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data["tokens"]:
+        await update.message.reply_text("❌ No tokens entered. Please start again with /start.")
+        return
+
+    await update.message.reply_text("✅ All tokens saved! Now send the Facebook post URL.")
+    return "POST_INPUT"
+
+# 🔹 Collect Post ID
+async def collect_post_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["post_id"] = update.message.text
-    await update.message.reply_text("✅ Post ID saved! Now enter the **delay (in seconds)**:")
-    return GET_DELAY
+    await update.message.reply_text("✅ Post ID saved! Now enter the delay time (in seconds).")
+    return "DELAY_INPUT"
 
-# ✅ Get Delay Time
-async def get_delay(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# 🔹 Collect Delay
+async def collect_delay(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         delay = int(update.message.text)
-        if delay < 0:
-            raise ValueError
         context.user_data["delay"] = delay
-        await update.message.reply_text(f"✅ Delay set to {delay} seconds. Now send your text to create a sticker.")
-        return TEXT_INPUT
+        await update.message.reply_text("✅ Delay time set! Now send the text you want to convert into a sticker.")
+        return "TEXT_INPUT"
     except ValueError:
         await update.message.reply_text("❌ Please enter a valid number.")
-        return GET_DELAY
+        return "DELAY_INPUT"
 
-# ✅ Handle User Text for Sticker Generation
+# 🔹 Generate & Post Sticker
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    post_id = context.user_data.get("post_id")
-    delay = context.user_data.get("delay", 5)  # Default 5 sec
-    tokens = context.user_data.get("tokens", [])
-
-    if not post_id or not tokens:
-        await update.message.reply_text("❌ Missing Facebook token or post ID. Start again using /start")
-        return TEXT_INPUT
-
     style = random.choice(STICKER_STYLES)
     sticker_url = generate_sticker(user_text, style)
 
+    post_id = context.user_data["post_id"]
+    tokens = context.user_data["tokens"]
+    delay = context.user_data["delay"]
+
     for token in tokens:
-        success = post_comment(token, post_id, sticker_url)
+        success = send_facebook_comment(token, post_id, sticker_url)
+
         if success:
-            await update.message.reply_text(f"✅ Sticker sent successfully!\n{sticker_url}")
-            await asyncio.sleep(delay)  # Delay before next comment
-            return TEXT_INPUT
+            await update.message.reply_text(f"✅ Sticker '{user_text}' posted successfully!")
+            time.sleep(delay)
         else:
-            await update.message.reply_text(f"❌ Failed with token {token[:10]}... trying next.")
+            await update.message.reply_text(f"❌ Failed with token {token[:10]}... Switching token.")
 
-    await update.message.reply_text("❌ All tokens failed! Check your tokens.")
-    return TEXT_INPUT
+    await update.message.reply_text("🎉 All stickers posted! Send another text or type /stop to exit.")
 
-# ✅ Stop Command
+# 🔹 Stop Command
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🛑 Stopping the process.")
-    return ConversationHandler.END
+    return "STOP"
 
-# ✅ Main Function
+# 🔹 Main Function
 def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            TOKEN_COUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_token_count)],
-            GET_TOKENS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_tokens)],
-            GET_POST_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_post_id)],
-            GET_DELAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_delay)],
-            TEXT_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text)],
-        },
-        fallbacks=[CommandHandler("stop", stop)]
-    )
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("done", done))
+    app.add_handler(CommandHandler("stop", stop))
 
-    app.add_handler(conv_handler)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_tokens))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_post_id))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, collect_delay))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
     app.run_polling()
 
 if __name__ == "__main__":
