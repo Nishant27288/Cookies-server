@@ -9,7 +9,7 @@ from io import BytesIO
 
 # Initialize the bot
 bot = Bot()
-bot.login(username="your_instagram_username", password="your_instagram_password")
+bot.login(username="memeworld6451", password="Ni$h@nt21")
 
 # Fetching random meme from an API (Imgflip)
 def get_random_meme():
