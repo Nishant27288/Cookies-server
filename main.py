@@ -1,110 +1,84 @@
+import schedule
+import time
+from instabot import Bot
 import requests
 import random
-import time
-import asyncio
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import os
+from PIL import Image
+from io import BytesIO
 
-# Telegram Bot Token
-TELEGRAM_BOT_TOKEN = "7635741820:AAGAks8tA7qTJb5W6lSOpE1uMqG2Y9POvdg"
+# Initialize the bot
+bot = Bot()
+bot.login(username="your_instagram_username", password="your_instagram_password")
 
-# List of sticker styles
-STICKER_STYLES = ["bold", "italic", "outline", "shadow", "neon", "3d", "colorful"]
+# Fetching random meme from an API (Imgflip)
+def get_random_meme():
+    url = 'https://api.imgflip.com/get_memes'
+    response = requests.get(url)
+    
+    if response.status_code == 200:
+        memes = response.json()['data']['memes']
+        meme = random.choice(memes)  # Choose a random meme
+        meme_url = meme['url']
+        meme_name = meme['name']
+        return meme_url, meme_name
+    return None, None
 
-# Dictionary to store user data
-user_data = {}
+# Download meme image
+def download_meme(meme_url):
+    response = requests.get(meme_url)
+    img = Image.open(BytesIO(response.content))
+    
+    # Save the meme locally
+    meme_filename = 'meme.jpg'
+    img.save(meme_filename)
+    return meme_filename
 
-# Function to generate a sticker (Dummy URL, replace with real API)
-def generate_sticker(text, style):
-    return f"https://example.com/sticker/{style}/{text}.png"
+# Upload meme to Instagram
+def upload_meme_to_instagram(meme_filename, caption):
+    bot.upload_photo(meme_filename, caption=caption)
+    os.remove(meme_filename)  # Clean up the local file after upload
 
-# Function to send sticker comment to Facebook
-def send_facebook_comment(access_token, post_id, sticker_url):
-    url = f"https://graph.facebook.com/{post_id}/comments"
-    payload = {"access_token": access_token, "message": sticker_url}
-    response = requests.post(url, json=payload)
-    return response.status_code == 200
+# Function to schedule meme upload
+def post_meme():
+    meme_url, meme_name = get_random_meme()
+    
+    if meme_url:
+        print(f"Fetched Meme: {meme_name}")
+        
+        # Download meme
+        meme_filename = download_meme(meme_url)
+        
+        # Set a random caption (you can use a list of meme captions)
+        captions = [
+            "This is a hilarious meme!",
+            "Who doesn't love a good meme?",
+            f"Here's a trending meme: {meme_name}!",
+        ]
+        caption = random.choice(captions)
+        
+        # Upload meme to Instagram
+        upload_meme_to_instagram(meme_filename, caption)
+        print(f"Meme uploaded successfully with caption: {caption}")
+    else:
+        print("Failed to fetch meme.")
 
-# Start command
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data[update.effective_user.id] = {}
-    await update.message.reply_text("🤖 Send the number of Facebook tokens you want to use.")
-    return "TOKEN_COUNT"
+# Scheduling the posts at specific times
+def schedule_posts():
+    # Schedule posts
+    schedule.every().day.at("06:00").do(post_meme)  # 6 AM
+    schedule.every().day.at("09:00").do(post_meme)  # 9 AM
+    schedule.every().day.at("13:00").do(post_meme)  # 1 PM
+    schedule.every().day.at("16:00").do(post_meme)  # 4 PM
+    schedule.every().day.at("21:00").do(post_meme)  # 9 PM
 
-# Get token count
-async def get_token_count(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        token_count = int(update.message.text)
-        if token_count < 1:
-            raise ValueError
-        user_data[update.effective_user.id]["token_count"] = token_count
-        user_data[update.effective_user.id]["tokens"] = []
-        await update.message.reply_text(f"✅ Send {token_count} tokens one by one.")
-        return "GET_TOKENS"
-    except ValueError:
-        await update.message.reply_text("❌ Enter a valid number (1 or more).")
-        return "TOKEN_COUNT"
+    while True:
+        schedule.run_pending()
+        time.sleep(60)  # Check every minute
 
-# Receive tokens
-async def get_tokens(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_data[user_id]["tokens"].append(update.message.text)
-    if len(user_data[user_id]["tokens"]) < user_data[user_id]["token_count"]:
-        await update.message.reply_text(f"✅ Token {len(user_data[user_id]['tokens'])} saved. Send the next one.")
-        return "GET_TOKENS"
-    await update.message.reply_text("✅ All tokens saved! Now send the Facebook post URL.")
-    return "POST_URL"
-
-# Receive post URL
-async def get_post_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data[update.effective_user.id]["post_url"] = update.message.text
-    await update.message.reply_text("✅ Post URL saved! Now enter the delay (in seconds).")
-    return "DELAY"
-
-# Receive delay time
-async def get_delay(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        delay = int(update.message.text)
-        user_data[update.effective_user.id]["delay"] = delay
-        await update.message.reply_text("✅ Delay saved! Now enter the text for the sticker comment.")
-        return "STICKER_TEXT"
-    except ValueError:
-        await update.message.reply_text("❌ Enter a valid number.")
-        return "DELAY"
-
-# Receive sticker text and start commenting
-async def get_sticker_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    text = update.message.text
-    style = random.choice(STICKER_STYLES)
-    sticker_url = generate_sticker(text, style)
-    post_url = user_data[user_id]["post_url"]
-    tokens = user_data[user_id]["tokens"]
-    delay = user_data[user_id]["delay"]
-
-    for token in tokens:
-        success = send_facebook_comment(token, post_url, sticker_url)
-        if success:
-            await update.message.reply_text(f"✅ Sticker comment posted successfully!")
-        else:
-            await update.message.reply_text(f"❌ Failed to comment with token {token[:10]}... Trying next.")
-        time.sleep(delay)
-
-    await update.message.reply_text("✅ All sticker comments sent!")
-    return "DONE"
-
-# Main function
+# Main function to start the scheduling
 def main():
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    schedule_posts()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_token_count))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_tokens))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_post_url))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_delay))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_sticker_text))
-
-    app.run_polling()
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
