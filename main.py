@@ -8,7 +8,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 TELEGRAM_BOT_TOKEN = "7635741820:AAGAks8tA7qTJb5W6lSOpE1uMqG2Y9POvdg"
 
 # States for conversation
-TOKEN_COUNT, TIME_DELAY, MESSAGE_FILE, POST_URL, TARGET_COMMENT = range(5)
+TOKEN_COUNT, TIME_DELAY, MESSAGE_FILE, POST_URL, TARGET_COMMENT, TOKEN_LIST = range(6)
 
 # Store user inputs
 user_data = {}
@@ -42,14 +42,11 @@ async def get_post_url(update: Update, context: CallbackContext) -> int:
     await update.message.reply_text("💬 Jis Comment Pe Reply Karna Hai, Wo Comment Send Karo:")
     return TARGET_COMMENT
 
-# Step 5: Get target comment and start replying
+# Step 5: Get target comment
 async def get_target_comment(update: Update, context: CallbackContext) -> int:
     user_data["target_comment"] = update.message.text
-    await update.message.reply_text("🚀 Bot Start Ho Raha Hai...")
-
-    # Now ask for tokens
     await update.message.reply_text("⚙️ Facebook Tokens List Send Karo (Comma Separated):")
-    return ConversationHandler.END
+    return TOKEN_LIST
 
 # Step 6: Process Tokens List and Start Replying
 async def process_tokens(update: Update, context: CallbackContext) -> int:
@@ -59,7 +56,7 @@ async def process_tokens(update: Update, context: CallbackContext) -> int:
 
     # Save the tokens to user_data
     user_data["tokens"] = tokens
-    await update.message.reply_text(f"✅ Tokens Successfully Saved: {', '.join(tokens)}\n\nBot Start Karne Ki Liye, Reply Karna Start Kiya Jayega.")
+    await update.message.reply_text(f"✅ Tokens Successfully Saved: {', '.join(tokens)}\n\n🚀 Bot Start Ho Raha Hai...")
 
     # Start the comment reply process with tokens
     await start_comment_reply(tokens)
@@ -140,8 +137,9 @@ def main():
             MESSAGE_FILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_message_file)],
             POST_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_post_url)],
             TARGET_COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_target_comment)],
+            TOKEN_LIST: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_tokens)],
         },
-        fallbacks=[MessageHandler(filters.TEXT & ~filters.COMMAND, process_tokens)],
+        fallbacks=[],
     )
 
     application.add_handler(conv_handler)
