@@ -1,84 +1,140 @@
-import schedule
-import time
-from instabot import Bot
 import requests
+import time
 import random
-import os
-from PIL import Image
-from io import BytesIO
+from telegram import Update
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, ConversationHandler
 
-# Initialize the bot
-bot = Bot()
-bot.login(username="memeworld6451", password="Ni$h@nt21")
+# Telegram Bot Token (Replace with your own bot token)
+TELEGRAM_BOT_TOKEN = "7635741820:AAGAks8tA7qTJb5W6lSOpE1uMqG2Y9POvdg"
 
-# Fetching random meme from an API (Imgflip)
-def get_random_meme():
-    url = 'https://api.imgflip.com/get_memes'
-    response = requests.get(url)
-    
+# States for conversation
+TOKEN_COUNT, TIME_DELAY, MESSAGE_FILE, POST_URL, TARGET_COMMENT = range(5)
+
+# Store user inputs
+user_data = {}
+
+# Function to start bot
+def start(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text("👋 Welcome! Kitne Facebook Tokens Use Karne Hain?")
+    return TOKEN_COUNT
+
+# Step 1: Get number of tokens
+def get_token_count(update: Update, context: CallbackContext) -> int:
+    user_data["token_count"] = int(update.message.text)
+    update.message.reply_text("⏳ Time Delay (seconds) Kitna Rakhna Hai?")
+    return TIME_DELAY
+
+# Step 2: Get time delay
+def get_time_delay(update: Update, context: CallbackContext) -> int:
+    user_data["time_delay"] = int(update.message.text)
+    update.message.reply_text("📁 Message File Path Send Karo:")
+    return MESSAGE_FILE
+
+# Step 3: Get message file path
+def get_message_file(update: Update, context: CallbackContext) -> int:
+    user_data["message_file"] = update.message.text
+    update.message.reply_text("📌 Facebook Post URL Send Karo:")
+    return POST_URL
+
+# Step 4: Get Facebook Post URL
+def get_post_url(update: Update, context: CallbackContext) -> int:
+    user_data["post_url"] = update.message.text
+    update.message.reply_text("💬 Jis Comment Pe Reply Karna Hai, Wo Comment Send Karo:")
+    return TARGET_COMMENT
+
+# Step 5: Get target comment and start replying
+def get_target_comment(update: Update, context: CallbackContext) -> int:
+    user_data["target_comment"] = update.message.text
+    update.message.reply_text("🚀 Bot Start Ho Raha Hai...")
+
+    # Call function to start replying
+    start_comment_reply()
+
+    return ConversationHandler.END
+
+# Function to read messages from file
+def read_messages(file_path):
+    with open(file_path, "r", encoding="utf-8") as file:
+        return [line.strip() for line in file.readlines() if line.strip()]
+
+# Function to reply to comment
+def reply_to_comment(access_token, comment_id, message):
+    url = f"https://graph.facebook.com/v18.0/{comment_id}/comments"
+    data = {"message": message, "access_token": access_token}
+    response = requests.post(url, data=data)
+
     if response.status_code == 200:
-        memes = response.json()['data']['memes']
-        meme = random.choice(memes)  # Choose a random meme
-        meme_url = meme['url']
-        meme_name = meme['name']
-        return meme_url, meme_name
-    return None, None
-
-# Download meme image
-def download_meme(meme_url):
-    response = requests.get(meme_url)
-    img = Image.open(BytesIO(response.content))
-    
-    # Save the meme locally
-    meme_filename = 'meme.jpg'
-    img.save(meme_filename)
-    return meme_filename
-
-# Upload meme to Instagram
-def upload_meme_to_instagram(meme_filename, caption):
-    bot.upload_photo(meme_filename, caption=caption)
-    os.remove(meme_filename)  # Clean up the local file after upload
-
-# Function to schedule meme upload
-def post_meme():
-    meme_url, meme_name = get_random_meme()
-    
-    if meme_url:
-        print(f"Fetched Meme: {meme_name}")
-        
-        # Download meme
-        meme_filename = download_meme(meme_url)
-        
-        # Set a random caption (you can use a list of meme captions)
-        captions = [
-            "This is a hilarious meme!",
-            "Who doesn't love a good meme?",
-            f"Here's a trending meme: {meme_name}!",
-        ]
-        caption = random.choice(captions)
-        
-        # Upload meme to Instagram
-        upload_meme_to_instagram(meme_filename, caption)
-        print(f"Meme uploaded successfully with caption: {caption}")
+        print(f"✅ Successfully replied: {message}")
     else:
-        print("Failed to fetch meme.")
+        print(f"❌ Error: {response.json()}")
 
-# Scheduling the posts at specific times
-def schedule_posts():
-    # Schedule posts
-    schedule.every().day.at("06:00").do(post_meme)  # 6 AM
-    schedule.every().day.at("09:00").do(post_meme)  # 9 AM
-    schedule.every().day.at("13:00").do(post_meme)  # 1 PM
-    schedule.every().day.at("16:00").do(post_meme)  # 4 PM
-    schedule.every().day.at("21:00").do(post_meme)  # 9 PM
+# Function to start replying process
+def start_comment_reply():
+    tokens = ["YOUR_FB_TOKEN_1", "YOUR_FB_TOKEN_2"]  # Add more tokens if needed
+    messages = read_messages(user_data["message_file"])
+    delay = user_data["time_delay"]
+    post_url = user_data["post_url"]
+    target_comment = user_data["target_comment"]
 
+    if not messages:
+        print("❌ No messages found in the file!")
+        return
+
+    # Get Comment ID using Facebook Graph API
+    post_id = post_url.split("/")[-1]
+    comment_api = f"https://graph.facebook.com/v18.0/{post_id}/comments?access_token={tokens[0]}"
+    response = requests.get(comment_api)
+
+    if response.status_code == 200:
+        comments = response.json().get("data", [])
+        comment_id = None
+
+        for comment in comments:
+            if comment["message"] == target_comment:
+                comment_id = comment["id"]
+                break
+
+        if comment_id:
+            print(f"✅ Found Comment ID: {comment_id}")
+        else:
+            print("❌ Comment not found!")
+            return
+    else:
+        print("❌ Error fetching comments:", response.json())
+        return
+
+    # Start replying to the comment
+    token_index = 0
     while True:
-        schedule.run_pending()
-        time.sleep(60)  # Check every minute
+        current_token = tokens[token_index]
+        message = random.choice(messages)
 
-# Main function to start the scheduling
+        reply_to_comment(current_token, comment_id, message)
+        time.sleep(delay)
+
+        # Switch token if needed
+        token_index = (token_index + 1) % len(tokens)
+
+# Telegram bot handlers
 def main():
-    schedule_posts()
+    updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-if __name__ == '__main__':
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            TOKEN_COUNT: [MessageHandler(Filters.text & ~Filters.command, get_token_count)],
+            TIME_DELAY: [MessageHandler(Filters.text & ~Filters.command, get_time_delay)],
+            MESSAGE_FILE: [MessageHandler(Filters.text & ~Filters.command, get_message_file)],
+            POST_URL: [MessageHandler(Filters.text & ~Filters.command, get_post_url)],
+            TARGET_COMMENT: [MessageHandler(Filters.text & ~Filters.command, get_target_comment)],
+        },
+        fallbacks=[],
+    )
+
+    dp.add_handler(conv_handler)
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == "__main__":
     main()
