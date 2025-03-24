@@ -26,15 +26,21 @@ async def start(update: Update, context: CallbackContext):
 
 
 async def setup(update: Update, context: CallbackContext):
-    await update.message.reply_text("🔹 Kitne tokens use karne hai? (1 ya more)")
+    await update.message.reply_text("🔹 Kitne tokens use karne hai? (1 ya more)\n\nExample: token1 token2 token3")
     return 1
 
 
 async def get_tokens(update: Update, context: CallbackContext):
     global tokens
-    tokens = update.message.text.split()
-    await update.message.reply_text(f"✅ {len(tokens)} tokens save ho gaye. \n🔹 Ab Post URL bhejo:")
-    return 2
+    # Checking if tokens were provided as space-separated input
+    tokens_input = update.message.text.strip()
+    if tokens_input:
+        tokens = tokens_input.split()
+        await update.message.reply_text(f"✅ {len(tokens)} tokens save ho gaye. \n🔹 Ab Post URL bhejo:")
+        return 2
+    else:
+        await update.message.reply_text("⚠️ Tokens provide karo, space se separate karke.")
+        return 1
 
 
 async def get_post_url(update: Update, context: CallbackContext):
