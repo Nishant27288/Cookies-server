@@ -2,9 +2,9 @@ import requests
 import time
 import random
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, filters, CallbackContext, ConversationHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ConversationHandler, CallbackContext
 
-# Telegram Bot Token (Replace with your own bot token)
+# Telegram Bot Token (Replace with your bot token)
 TELEGRAM_BOT_TOKEN = "7635741820:AAGAks8tA7qTJb5W6lSOpE1uMqG2Y9POvdg"
 
 # States for conversation
@@ -14,41 +14,41 @@ TOKEN_COUNT, TIME_DELAY, MESSAGE_FILE, POST_URL, TARGET_COMMENT = range(5)
 user_data = {}
 
 # Function to start bot
-def start(update: Update, context: CallbackContext) -> int:
-    update.message.reply_text("👋 Welcome! Kitne Facebook Tokens Use Karne Hain?")
+async def start(update: Update, context: CallbackContext) -> int:
+    await update.message.reply_text("👋 Welcome! Kitne Facebook Tokens Use Karne Hain?")
     return TOKEN_COUNT
 
 # Step 1: Get number of tokens
-def get_token_count(update: Update, context: CallbackContext) -> int:
+async def get_token_count(update: Update, context: CallbackContext) -> int:
     user_data["token_count"] = int(update.message.text)
-    update.message.reply_text("⏳ Time Delay (seconds) Kitna Rakhna Hai?")
+    await update.message.reply_text("⏳ Time Delay (seconds) Kitna Rakhna Hai?")
     return TIME_DELAY
 
 # Step 2: Get time delay
-def get_time_delay(update: Update, context: CallbackContext) -> int:
+async def get_time_delay(update: Update, context: CallbackContext) -> int:
     user_data["time_delay"] = int(update.message.text)
-    update.message.reply_text("📁 Message File Path Send Karo:")
+    await update.message.reply_text("📁 Message File Path Send Karo:")
     return MESSAGE_FILE
 
 # Step 3: Get message file path
-def get_message_file(update: Update, context: CallbackContext) -> int:
+async def get_message_file(update: Update, context: CallbackContext) -> int:
     user_data["message_file"] = update.message.text
-    update.message.reply_text("📌 Facebook Post URL Send Karo:")
+    await update.message.reply_text("📌 Facebook Post URL Send Karo:")
     return POST_URL
 
 # Step 4: Get Facebook Post URL
-def get_post_url(update: Update, context: CallbackContext) -> int:
+async def get_post_url(update: Update, context: CallbackContext) -> int:
     user_data["post_url"] = update.message.text
-    update.message.reply_text("💬 Jis Comment Pe Reply Karna Hai, Wo Comment Send Karo:")
+    await update.message.reply_text("💬 Jis Comment Pe Reply Karna Hai, Wo Comment Send Karo:")
     return TARGET_COMMENT
 
 # Step 5: Get target comment and start replying
-def get_target_comment(update: Update, context: CallbackContext) -> int:
+async def get_target_comment(update: Update, context: CallbackContext) -> int:
     user_data["target_comment"] = update.message.text
-    update.message.reply_text("🚀 Bot Start Ho Raha Hai...")
+    await update.message.reply_text("🚀 Bot Start Ho Raha Hai...")
 
     # Call function to start replying
-    start_comment_reply()
+    await start_comment_reply()
 
     return ConversationHandler.END
 
@@ -69,7 +69,7 @@ def reply_to_comment(access_token, comment_id, message):
         print(f"❌ Error: {response.json()}")
 
 # Function to start replying process
-def start_comment_reply():
+async def start_comment_reply():
     tokens = ["YOUR_FB_TOKEN_1", "YOUR_FB_TOKEN_2"]  # Add more tokens if needed
     messages = read_messages(user_data["message_file"])
     delay = user_data["time_delay"]
@@ -117,24 +117,22 @@ def start_comment_reply():
 
 # Telegram bot handlers
 def main():
-    updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            TOKEN_COUNT: [MessageHandler(Filters.text & ~Filters.command, get_token_count)],
-            TIME_DELAY: [MessageHandler(Filters.text & ~Filters.command, get_time_delay)],
-            MESSAGE_FILE: [MessageHandler(Filters.text & ~Filters.command, get_message_file)],
-            POST_URL: [MessageHandler(Filters.text & ~Filters.command, get_post_url)],
-            TARGET_COMMENT: [MessageHandler(Filters.text & ~Filters.command, get_target_comment)],
+            TOKEN_COUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_token_count)],
+            TIME_DELAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_time_delay)],
+            MESSAGE_FILE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_message_file)],
+            POST_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_post_url)],
+            TARGET_COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_target_comment)],
         },
         fallbacks=[],
     )
 
-    dp.add_handler(conv_handler)
-    updater.start_polling()
-    updater.idle()
+    application.add_handler(conv_handler)
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
