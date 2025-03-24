@@ -21,7 +21,7 @@ async def start(update: Update, context: CallbackContext) -> int:
 # Step 1: Get number of tokens
 async def get_token_count(update: Update, context: CallbackContext) -> int:
     user_data["token_count"] = int(update.message.text)
-    await update.message.reply_text("⏳ Time Delay (seconds) Kitna Rakhna Hai?")
+    await update.message.reply_text(f"👍 {user_data['token_count']} Tokens Chahiye. Ab Time Delay (seconds) Kitna Rakhna Hai?")
     return TIME_DELAY
 
 # Step 2: Get time delay
@@ -47,8 +47,22 @@ async def get_target_comment(update: Update, context: CallbackContext) -> int:
     user_data["target_comment"] = update.message.text
     await update.message.reply_text("🚀 Bot Start Ho Raha Hai...")
 
-    # Call function to start replying
-    await start_comment_reply()
+    # Now ask for tokens
+    await update.message.reply_text("⚙️ Facebook Tokens List Send Karo (Comma Separated):")
+    return ConversationHandler.END
+
+# Step 6: Process Tokens List and Start Replying
+async def process_tokens(update: Update, context: CallbackContext) -> int:
+    # Get the list of tokens from user
+    tokens = update.message.text.split(",")
+    tokens = [token.strip() for token in tokens]  # Remove extra spaces
+
+    # Save the tokens to user_data
+    user_data["tokens"] = tokens
+    await update.message.reply_text(f"✅ Tokens Successfully Saved: {', '.join(tokens)}\n\nBot Start Karne Ki Liye, Reply Karna Start Kiya Jayega.")
+
+    # Start the comment reply process with tokens
+    await start_comment_reply(tokens)
 
     return ConversationHandler.END
 
@@ -69,8 +83,7 @@ def reply_to_comment(access_token, comment_id, message):
         print(f"❌ Error: {response.json()}")
 
 # Function to start replying process
-async def start_comment_reply():
-    tokens = ["YOUR_FB_TOKEN_1", "YOUR_FB_TOKEN_2"]  # Add more tokens if needed
+async def start_comment_reply(tokens):
     messages = read_messages(user_data["message_file"])
     delay = user_data["time_delay"]
     post_url = user_data["post_url"]
@@ -128,7 +141,7 @@ def main():
             POST_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_post_url)],
             TARGET_COMMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_target_comment)],
         },
-        fallbacks=[],
+        fallbacks=[MessageHandler(filters.TEXT & ~filters.COMMAND, process_tokens)],
     )
 
     application.add_handler(conv_handler)
