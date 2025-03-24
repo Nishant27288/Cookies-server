@@ -1,94 +1,160 @@
-import telegram
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, ConversationHandler
-import time
+import logging
 import random
+import time
 import requests
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
-TOKEN = "7635741820:AAGAks8tA7qTJb5W6lSOpE1uMqG2Y9POvdg"  # Telegram bot ka token yahan daalo
+# Telegram Bot Token
+TELEGRAM_BOT_TOKEN = "7635741820:AAGAks8tA7qTJb5W6lSOpE1uMqG2Y9POvdg"
 
-# Conversation states
-(ASK_TOKENS, ASK_URL, ASK_COMMENT_ID, ASK_FILE, ASK_DELAY, START_REPLY) = range(6)
+# Logging Setup
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-user_data = {}
+# Global Variables
+tokens = []
+post_url = ""
+target_comment = ""
+comment_id = ""
+messages = []
+delay = 0
 
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text("Kitne Facebook tokens use karne hai?")
-    return ASK_TOKENS
 
-def ask_url(update: Update, context: CallbackContext):
-    user_data["tokens_count"] = int(update.message.text)
-    user_data["tokens"] = []
-    update.message.reply_text("Facebook Post URL do:")
-    return ASK_URL
+async def start(update: Update, context: CallbackContext):
+    await update.message.reply_text("👋 Welcome! Mujhe setup karne ke liye /setup likho.")
 
-def ask_comment_id(update: Update, context: CallbackContext):
-    user_data["post_url"] = update.message.text
-    update.message.reply_text("Jis comment pe reply dena hai uska ID do:")
-    return ASK_COMMENT_ID
 
-def ask_file(update: Update, context: CallbackContext):
-    user_data["comment_id"] = update.message.text
-    update.message.reply_text("Message file send karo:")
-    return ASK_FILE
+async def setup(update: Update, context: CallbackContext):
+    await update.message.reply_text("🔹 Kitne tokens use karne hai? (1 ya more)")
+    return 1
 
-def ask_delay(update: Update, context: CallbackContext):
-    file = update.message.document.get_file()
+
+async def get_tokens(update: Update, context: CallbackContext):
+    global tokens
+    tokens = update.message.text.split()
+    await update.message.reply_text(f"✅ {len(tokens)} tokens save ho gaye. \n🔹 Ab Post URL bhejo:")
+    return 2
+
+
+async def get_post_url(update: Update, context: CallbackContext):
+    global post_url
+    post_url = update.message.text
+    await update.message.reply_text("✅ Post URL save ho gaya.\n🔹 Ab Jis Comment Pe Reply Karna Hai, Wo Comment Paste Karo:")
+    return 3
+
+
+async def get_target_comment(update: Update, context: CallbackContext):
+    global target_comment, comment_id
+    target_comment = update.message.text
+
+    # Comment ID Extract Karne Ka Attempt
+    comment_id = get_comment_id_from_text(target_comment)
+
+    if comment_id:
+        await update.message.reply_text(f"✅ Comment ID `{comment_id}` mil gaya. \n🔹 Ab Message file bhejo:")
+        return 4
+    else:
+        await update.message.reply_text("⚠️ Comment ID nahi mila! Ensure karo ke tumne sahi comment diya hai.")
+        return 3
+
+
+async def get_message_file(update: Update, context: CallbackContext):
+    global messages
+    file_id = update.message.document.file_id
+    new_file = await context.bot.get_file(file_id)
     file_path = "messages.txt"
-    file.download(file_path)
-    
+    await new_file.download_to_drive(file_path)
+
     with open(file_path, "r", encoding="utf-8") as f:
-        user_data["messages"] = [line.strip() for line in f.readlines()]
+        messages = [line.strip() for line in f.readlines() if line.strip()]
 
-    update.message.reply_text("Kitne seconds ka delay chahiye?")
-    return ASK_DELAY
+    await update.message.reply_text(f"✅ {len(messages)} messages load ho gaye. \n🔹 Ab delay (seconds) bhejo:")
+    return 5
 
-def start_reply(update: Update, context: CallbackContext):
-    user_data["delay"] = int(update.message.text)
-    update.message.reply_text("Bot comments reply karna shuru kar raha hai!")
 
+async def get_delay(update: Update, context: CallbackContext):
+    global delay
+    try:
+        delay = int(update.message.text)
+        await update.message.reply_text("✅ Setup Complete! Bot ab reply karega. 🚀 /start_reply use karo.")
+    except ValueError:
+        await update.message.reply_text("⚠️ Galat input! Delay sirf number me likho.")
+    return -1
+
+
+async def start_reply(update: Update, context: CallbackContext):
+    if not tokens or not post_url or not comment_id or not messages or delay <= 0:
+        await update.message.reply_text("⚠️ Setup incomplete hai! Pehle /setup complete karo.")
+        return
+
+    await update.message.reply_text("✅ Bot ab reply kar raha hai...")
+
+    token_index = 0
     while True:
-        for message in user_data["messages"]:
-            for token in user_data["tokens"]:
-                headers = {"Authorization": f"Bearer {token}"}
-                data = {
-                    "message": message,
-                    "comment_id": user_data["comment_id"]
-                }
-                response = requests.post("https://graph.facebook.com/v12.0/{comment-id}/comments", headers=headers, data=data)
+        token = tokens[token_index % len(tokens)]
+        message = random.choice(messages)
 
-                if response.status_code == 200:
-                    update.message.reply_text(f"Comment sent: {message}")
-                else:
-                    update.message.reply_text(f"Error: {response.text}")
+        post_comment(token, post_url, comment_id, message)
 
-                time.sleep(user_data["delay"])  # Delay before next comment
+        token_index += 1
+        time.sleep(delay)
 
-    return ConversationHandler.END
 
-def cancel(update: Update, context: CallbackContext):
-    update.message.reply_text("Process cancel kar diya gaya.")
-    return ConversationHandler.END
+def get_comment_id_from_text(comment_text):
+    """
+    Yeh function Facebook Graph API se comment ID dhoondhne ki koshish karega
+    agar original post aur comment text diya gaya ho.
+    """
+    global post_url, tokens
+    if not tokens:
+        return None
+
+    # Pehla token use karke try karega
+    token = tokens[0]
+
+    # Post ID extract karo
+    post_id = post_url.split("/")[-1].split("?")[0]  # URL se post ID nikalna
+
+    api_url = f"https://graph.facebook.com/v18.0/{post_id}/comments"
+    params = {"access_token": token}
+
+    response = requests.get(api_url, params=params)
+    if response.status_code == 200:
+        comments = response.json().get("data", [])
+        for comment in comments:
+            if comment["message"].strip() == comment_text.strip():
+                return comment["id"]  # Agar match mil gaya toh ID return karo
+
+    return None
+
+
+def post_comment(token, post_url, comment_id, message):
+    api_url = f"https://graph.facebook.com/v18.0/{comment_id}/comments"
+    payload = {"message": message, "access_token": token}
+
+    response = requests.post(api_url, data=payload)
+    if response.status_code == 200:
+        logger.info(f"✅ Successfully replied: {message}")
+    else:
+        logger.error(f"❌ Error: {response.text}")
+
 
 def main():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            ASK_TOKENS: [MessageHandler(Filters.text & ~Filters.command, ask_url)],
-            ASK_URL: [MessageHandler(Filters.text & ~Filters.command, ask_comment_id)],
-            ASK_COMMENT_ID: [MessageHandler(Filters.text & ~Filters.command, ask_file)],
-            ASK_FILE: [MessageHandler(Filters.document, ask_delay)],
-            ASK_DELAY: [MessageHandler(Filters.text & ~Filters.command, start_reply)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("setup", setup))
+    app.add_handler(CommandHandler("start_reply", start_reply))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_tokens))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_post_url))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_target_comment))
+    app.add_handler(MessageHandler(filters.Document.ALL, get_message_file))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, get_delay))
 
-    dp.add_handler(conv_handler)
-    updater.start_polling()
-    updater.idle()
+    logger.info("🤖 Bot Started...")
+    app.run_polling()
+
 
 if __name__ == "__main__":
     main()
