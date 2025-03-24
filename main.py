@@ -19,6 +19,7 @@ target_comment = ""
 comment_id = ""
 messages = []
 delay = 0
+step = 0  # Step to track the current stage of setup
 
 
 async def start(update: Update, context: CallbackContext):
@@ -26,47 +27,50 @@ async def start(update: Update, context: CallbackContext):
 
 
 async def setup(update: Update, context: CallbackContext):
+    global step
+    step = 1
     await update.message.reply_text("🔹 Kitne tokens use karne hai? (1 ya more)\n\nExample: token1 token2 token3")
-    return 1
+    return step
 
 
 async def get_tokens(update: Update, context: CallbackContext):
-    global tokens
-    # Checking if tokens were provided as space-separated input
+    global tokens, step
     tokens_input = update.message.text.strip()
+
     if tokens_input:
         tokens = tokens_input.split()
+        step = 2  # Move to next step after tokens are received
         await update.message.reply_text(f"✅ {len(tokens)} tokens save ho gaye. \n🔹 Ab Post URL bhejo:")
-        return 2
+        return step
     else:
         await update.message.reply_text("⚠️ Tokens provide karo, space se separate karke.")
-        return 1
+        return step
 
 
 async def get_post_url(update: Update, context: CallbackContext):
-    global post_url
+    global post_url, step
     post_url = update.message.text
+    step = 3  # Move to next step after URL is received
     await update.message.reply_text("✅ Post URL save ho gaya.\n🔹 Ab Jis Comment Pe Reply Karna Hai, Wo Comment Paste Karo:")
-    return 3
+    return step
 
 
 async def get_target_comment(update: Update, context: CallbackContext):
-    global target_comment, comment_id
+    global target_comment, comment_id, step
     target_comment = update.message.text
-
-    # Comment ID Extract Karne Ka Attempt
     comment_id = get_comment_id_from_text(target_comment)
 
     if comment_id:
+        step = 4  # Move to next step after comment ID is found
         await update.message.reply_text(f"✅ Comment ID `{comment_id}` mil gaya. \n🔹 Ab Message file bhejo:")
-        return 4
+        return step
     else:
         await update.message.reply_text("⚠️ Comment ID nahi mila! Ensure karo ke tumne sahi comment diya hai.")
-        return 3
+        return step
 
 
 async def get_message_file(update: Update, context: CallbackContext):
-    global messages
+    global messages, step
     file_id = update.message.document.file_id
     new_file = await context.bot.get_file(file_id)
     file_path = "messages.txt"
@@ -75,21 +79,25 @@ async def get_message_file(update: Update, context: CallbackContext):
     with open(file_path, "r", encoding="utf-8") as f:
         messages = [line.strip() for line in f.readlines() if line.strip()]
 
+    step = 5  # Move to next step after message file is received
     await update.message.reply_text(f"✅ {len(messages)} messages load ho gaye. \n🔹 Ab delay (seconds) bhejo:")
-    return 5
+    return step
 
 
 async def get_delay(update: Update, context: CallbackContext):
-    global delay
+    global delay, step
     try:
         delay = int(update.message.text)
+        step = -1  # Final step, ready to reply
         await update.message.reply_text("✅ Setup Complete! Bot ab reply karega. 🚀 /start_reply use karo.")
     except ValueError:
         await update.message.reply_text("⚠️ Galat input! Delay sirf number me likho.")
-    return -1
+    return step
 
 
 async def start_reply(update: Update, context: CallbackContext):
+    global tokens, post_url, comment_id, messages, delay, step
+
     if not tokens or not post_url or not comment_id or not messages or delay <= 0:
         await update.message.reply_text("⚠️ Setup incomplete hai! Pehle /setup complete karo.")
         return
